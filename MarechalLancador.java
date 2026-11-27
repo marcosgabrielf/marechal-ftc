@@ -5,7 +5,7 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 
 /** Controla a velocidade do lancador e autoriza a alimentacao pelo servo pux. */
 final class MarechalLancador {
-    private static final int ALVO_INICIAL = 1300;
+    private static final int ALVO_INICIAL = 1250;
     private static final int ALVO_MINIMO = 700;
     private static final int ALVO_MAXIMO = 2200;
     private static final int PASSO = 50;
@@ -19,7 +19,7 @@ final class MarechalLancador {
     private static final long TEMPO_SEM_SINAL_NS = 600_000_000L;
 
     private final DcMotorEx motor;
-    private int alvo = ALVO_INICIAL;
+    private int alvo;
     private int posicaoInicial;
     private long inicioVerificacaoNs;
     private long inicioEstavelNs;
@@ -32,7 +32,12 @@ final class MarechalLancador {
     private String estado = "PARADO";
 
     MarechalLancador(DcMotorEx motor) {
+        this(motor, ALVO_INICIAL);
+    }
+
+    MarechalLancador(DcMotorEx motor, int alvoInicial) {
         this.motor = motor;
+        this.alvo = Math.max(ALVO_MINIMO, Math.min(ALVO_MAXIMO, alvoInicial));
         motor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         motor.setPower(0);
     }

@@ -31,6 +31,9 @@ public class MarechalMiraColmeia extends LinearOpMode {
     private static final double GIRO_MINIMO = 0.10;
     private static final double GIRO_MAXIMO = 0.25;
     private static final double TOLERANCIA_GRAUS = 2.0;
+    private static final double DISTANCIA_TIRO_CALIBRADA_POL = 61.0;
+    private static final double FAIXA_TIRO_CALIBRADA_POL = 3.0;
+    private static final int VELOCIDADE_TIRO_CALIBRADA = 1250;
 
     private DcMotor direito;
     private DcMotor esquerdo;
@@ -189,6 +192,15 @@ public class MarechalMiraColmeia extends LinearOpMode {
                     telemetry.addData("Celula", alvo.metadata.name);
                     telemetry.addData("Desvio", "%.1f graus", alvo.ftcPose.bearing);
                     telemetry.addData("Distancia", "%.1f pol", alvo.ftcPose.range);
+                    if (Math.abs(alvo.ftcPose.range - DISTANCIA_TIRO_CALIBRADA_POL)
+                            <= FAIXA_TIRO_CALIBRADA_POL) {
+                        telemetry.addData("Lancador recomendado", "%d ticks/s (61 pol)",
+                            VELOCIDADE_TIRO_CALIBRADA);
+                    } else {
+                        telemetry.addData("Lancador recomendado",
+                            "SEM CALIBRACAO (61 pol: %d ticks/s)",
+                            VELOCIDADE_TIRO_CALIBRADA);
+                    }
                     telemetry.addData("Roll", "%.1f graus", alvo.ftcPose.roll);
                 }
                 telemetry.addData("Lancador alvo", "%d ticks/s", controleLancador.alvo());

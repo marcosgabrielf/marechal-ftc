@@ -30,6 +30,7 @@ public class MarechalTeleOp extends LinearOpMode {
     // Potencias iniciais de teste; ajustar conforme o mecanismo real.
     private static final double COLETOR = 1.00;
     private static final double PUX = 1.00;
+    private static final double LANCADOR_DESATOLAR = -0.40;
     // Posicao de batida calibrada em teste; centro usado para retorno.
     private static final double GARRA_RETORNO = 0.50;
     private static final double GARRA_BATIDA = 0.54;
@@ -64,6 +65,7 @@ public class MarechalTeleOp extends LinearOpMode {
         telemetry.addLine("Pronto: teste com rodas suspensas.");
         telemetry.addLine("Controle 1: Y alterna o lado da frente.");
         telemetry.addLine("Controle 2: D-pad cima/baixo ajusta o lancador.");
+        telemetry.addLine("Controle 2: segure RB para reverter o lancador.");
         telemetry.addLine("Confirme os nomes no Robot Configuration.");
         telemetry.addData("Garra", garraPosicao != null ? "Servo de posicao" :
             garraContinua != null ? "CONFIGURAR SERVO 0 COMO SERVO" : "NAO ENCONTRADA");
@@ -79,6 +81,7 @@ public class MarechalTeleOp extends LinearOpMode {
             boolean yAntes = false;
             boolean lancadorCimaAntes = false;
             boolean lancadorBaixoAntes = false;
+            boolean desatolandoAntes = false;
             boolean garraAAntes = false;
             boolean garraBAntes = false;
             while (opModeIsActive()) {
@@ -106,7 +109,18 @@ public class MarechalTeleOp extends LinearOpMode {
                 }
                 lancadorCimaAntes = gamepad2.dpad_up;
                 lancadorBaixoAntes = gamepad2.dpad_down;
-                controleLancador.atualizar(gamepad2.right_trigger > 0.20);
+                boolean desatolando = gamepad2.right_bumper;
+                if (desatolando) {
+                    // RB tem prioridade sobre RT. Soltar RB para imediatamente.
+                    if (!desatolandoAntes) {
+                        controleLancador.atualizar(false);
+                        lancador.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+                    }
+                    lancador.setPower(LANCADOR_DESATOLAR);
+                } else {
+                    controleLancador.atualizar(gamepad2.right_trigger > 0.20);
+                }
+                desatolandoAntes = desatolando;
                 double potenciaColetor = 0.0;
 
                 if (gamepad2.left_bumper) {
@@ -116,10 +130,12 @@ public class MarechalTeleOp extends LinearOpMode {
                 }
                 coletor.setPower(potenciaColetor);
                 double potenciaPux = 0.0;
-                if (potenciaColetor > 0.0 && controleLancador.pronto()) {
-                    potenciaPux = PUX;
-                } else if (potenciaColetor < 0.0) {
-                    potenciaPux = -PUX;
+                if (!desatolando) {
+                    if (potenciaColetor > 0.0 && controleLancador.pronto()) {
+                        potenciaPux = PUX;
+                    } else if (potenciaColetor < 0.0) {
+                        potenciaPux = -PUX;
+                    }
                 }
                 if (pux != null) pux.setPower(potenciaPux);
 
@@ -143,7 +159,8 @@ public class MarechalTeleOp extends LinearOpMode {
                 telemetry.addData("Limite tracao", "%.0f%%", tracao.limite() * 100.0);
                 telemetry.addData("Lancador alvo", "%d ticks/s", controleLancador.alvo());
                 telemetry.addData("Lancador atual", "%.0f ticks/s", controleLancador.velocidade());
-                telemetry.addData("Lancador estado", controleLancador.estado());
+                telemetry.addData("Lancador estado", desatolando ?
+                    "REVERSO: segure RB" : controleLancador.estado());
                 telemetry.addData("Coletor", "%.2f", potenciaColetor);
                 telemetry.addData("Pux", pux != null ? String.format("%.2f", potenciaPux) : "NAO ENCONTRADO");
                 telemetry.addData("Garra", garraPosicao != null ? "Servo de posicao" :
