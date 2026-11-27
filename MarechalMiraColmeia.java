@@ -4,6 +4,7 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.Range;
@@ -20,12 +21,10 @@ import java.util.List;
 /** Mira assistida para a celula pontuavel da colmeia BIOBUZZ. */
 @TeleOp(name = "Marechal - Mira Colmeia", group = "Equipe")
 public class MarechalMiraColmeia extends LinearOpMode {
-    private static final double LANCADOR = 0.85;
-    private static final double COLETOR = 0.70;
+    private static final double COLETOR = 1.00;
     private static final double PUX = 1.00;
-    private static final double GARRA_CONTINUA = 0.25;
-    private static final double GARRA_FECHADA = 0.45;
-    private static final double GARRA_ABERTA = 0.55;
+    private static final double GARRA_RETORNO = 0.50;
+    private static final double GARRA_BATIDA = 0.54;
 
     // Giro lento e somente enquanto RB do controle 1 estiver pressionado.
     private static final double GANHO_MIRA = 0.015;
@@ -35,7 +34,7 @@ public class MarechalMiraColmeia extends LinearOpMode {
 
     private DcMotor direito;
     private DcMotor esquerdo;
-    private DcMotor lancador;
+    private DcMotorEx lancador;
     private DcMotor coletor;
     private Servo garraPosicao;
     private CRServo garraContinua;
@@ -47,7 +46,7 @@ public class MarechalMiraColmeia extends LinearOpMode {
     public void runOpMode() throws InterruptedException {
         direito = hardwareMap.get(DcMotor.class, "direito");
         esquerdo = hardwareMap.get(DcMotor.class, "esquerdo");
-        lancador = hardwareMap.get(DcMotor.class, "lancador");
+        lancador = hardwareMap.get(DcMotorEx.class, "lancador");
         coletor = hardwareMap.get(DcMotor.class, "coletor");
         garraPosicao = hardwareMap.tryGet(Servo.class, "garra");
         garraContinua = hardwareMap.tryGet(CRServo.class, "garra");
@@ -59,7 +58,7 @@ public class MarechalMiraColmeia extends LinearOpMode {
         esquerdo.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         coletor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         lancador.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
-        lancador.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        MarechalLancador controleLancador = new MarechalLancador(lancador);
 
         esquerdo.setPower(0);
         direito.setPower(0);
@@ -90,6 +89,9 @@ public class MarechalMiraColmeia extends LinearOpMode {
             telemetry.addLine("D-pad esquerda/direita: ajuste fino de 1 grau.");
             telemetry.addLine("Y: alterna o lado da frente do robo.");
             telemetry.addLine("Controle 2: RT lancador, LT coleta, LB reverte, A/B garra.");
+            telemetry.addData("Garra", garraPosicao != null ? "Servo de posicao" :
+                garraContinua != null ? "CONFIGURAR SERVO 0 COMO SERVO" : "NAO ENCONTRADA");
+            telemetry.addLine("Controle 2: D-pad cima/baixo ajusta lancador.");
             telemetry.addLine("Na INIT: menu de 3 pontos > Camera Stream.");
             telemetry.update();
 
@@ -101,6 +103,10 @@ public class MarechalMiraColmeia extends LinearOpMode {
             boolean cimaAntes = false;
             boolean baixoAntes = false;
             boolean yAntes = false;
+            boolean lancadorCimaAntes = false;
+            boolean lancadorBaixoAntes = false;
+            boolean garraAAntes = false;
+            boolean garraBAntes = false;
             MarechalTracao tracao = new MarechalTracao();
 
             while (opModeIsActive()) {
@@ -121,57 +127,60 @@ public class MarechalMiraColmeia extends LinearOpMode {
                 baixoAntes = gamepad1.dpad_down;
 
                 AprilTagClusterDetection alvo = encontrarAlvo(alianca);
-                tracao.atualizar(gamepad1.left_stick_y, gamepad1.right_stick_x,
-                    gamepad1.left_bumper);
-                double potenciaEsquerda = tracao.esquerda();
-                double potenciaDireita = tracao.direita();
                 String estadoMira = "manual";
 
-                if (gamepad1.right_bumper) {
-                    if (alianca.isEmpty()) {
-                        estadoMira = "selecione X azul ou B vermelho";
-                    } else if (alvo == null) {
-                        estadoMira = "sem celula pontuavel visivel";
+                if (gamepad1.right_bumper && !alianca.isEmpty() && alvo != null) {
+                    double erro = alvo.ftcPose.bearing + ajusteGraus;
+                    if (Math.abs(erro) <= TOLERANCIA_GRAUS) {
+                        tracao.atualizarMira(0, 0);
+                        estadoMira = "ALINHADO";
                     } else {
-                        tracao.zerar();
-                        double erro = alvo.ftcPose.bearing + ajusteGraus;
-                        if (Math.abs(erro) <= TOLERANCIA_GRAUS) {
-                            potenciaEsquerda = 0;
-                            potenciaDireita = 0;
-                            estadoMira = "ALINHADO";
-                        } else {
-                            double giro = Range.clip(Math.abs(erro) * GANHO_MIRA,
-                                GIRO_MINIMO, GIRO_MAXIMO);
-                            // Bearing positivo significa alvo a esquerda da camera.
-                            // Potencia esquerda negativa e direita positiva giram a esquerda.
-                            potenciaEsquerda = erro > 0 ? -giro : giro;
-                            potenciaDireita = -potenciaEsquerda;
-                            estadoMira = erro > 0 ? "girando a esquerda" : "girando a direita";
-                        }
+                        double giro = Range.clip(Math.abs(erro) * GANHO_MIRA,
+                            GIRO_MINIMO, GIRO_MAXIMO);
+                        // Bearing positivo significa alvo a esquerda da camera.
+                        double esquerdaMira = erro > 0 ? -giro : giro;
+                        tracao.atualizarMira(esquerdaMira, -esquerdaMira);
+                        estadoMira = erro > 0 ? "girando a esquerda" : "girando a direita";
                     }
+                } else {
+                    tracao.atualizar(gamepad1.left_stick_y, gamepad1.right_stick_x,
+                        gamepad1.left_bumper);
+                    if (gamepad1.right_bumper)
+                        estadoMira = alianca.isEmpty() ? "selecione X azul ou B vermelho" :
+                            "sem celula pontuavel visivel";
                 }
-                esquerdo.setPower(potenciaEsquerda);
-                direito.setPower(potenciaDireita);
+                esquerdo.setPower(tracao.esquerda());
+                direito.setPower(tracao.direita());
 
-                double potenciaLancador = gamepad2.right_trigger > 0.20 ? LANCADOR : 0;
+                if (gamepad2.dpad_up && !lancadorCimaAntes) {
+                    controleLancador.ajustarAlvo(1);
+                }
+                if (gamepad2.dpad_down && !lancadorBaixoAntes) {
+                    controleLancador.ajustarAlvo(-1);
+                }
+                lancadorCimaAntes = gamepad2.dpad_up;
+                lancadorBaixoAntes = gamepad2.dpad_down;
+                controleLancador.atualizar(gamepad2.right_trigger > 0.20);
                 double potenciaColetor = gamepad2.left_bumper ? -COLETOR :
                     gamepad2.left_trigger > 0.20 ? COLETOR : 0;
-                lancador.setPower(potenciaLancador);
                 coletor.setPower(potenciaColetor);
                 if (pux != null)
-                    pux.setPower(potenciaColetor > 0 ? PUX :
+                    pux.setPower(potenciaColetor > 0 && controleLancador.pronto() ? PUX :
                         potenciaColetor < 0 ? -PUX : 0);
 
                 if (garraPosicao != null) {
-                    if (gamepad2.a) garraPosicao.setPosition(GARRA_FECHADA);
-                    else if (gamepad2.b) garraPosicao.setPosition(GARRA_ABERTA);
+                    if (gamepad2.a && !garraAAntes) garraPosicao.setPosition(GARRA_RETORNO);
+                    else if (gamepad2.b && !garraBAntes) garraPosicao.setPosition(GARRA_BATIDA);
                 }
-                if (garraContinua != null)
-                    garraContinua.setPower(gamepad2.a ? GARRA_CONTINUA :
-                        gamepad2.b ? -GARRA_CONTINUA : 0);
+                garraAAntes = gamepad2.a;
+                garraBAntes = gamepad2.b;
+                telemetry.addData("Garra", garraPosicao != null ? "Servo de posicao" :
+                    garraContinua != null ? "CONFIGURAR SERVO 0 COMO SERVO" : "NAO ENCONTRADA");
 
                 telemetry.addData("Alianca", alianca.isEmpty() ? "X azul / B vermelho" : alianca);
                 telemetry.addData("Mira RB", estadoMira);
+                telemetry.addData("Analogicos G1", "Y %.2f X %.2f",
+                    gamepad1.left_stick_y, gamepad1.right_stick_x);
                 telemetry.addData("Direcao", gamepad1.left_bumper ? "PRECISA" : "NORMAL");
                 telemetry.addData("Frente", tracao.frenteInvertida() ? "OPOSTA (Y alterna)" : "PADRAO (Y alterna)");
                 telemetry.addData("Limite tracao", "%.0f%%", tracao.limite() * 100.0);
@@ -182,7 +191,9 @@ public class MarechalMiraColmeia extends LinearOpMode {
                     telemetry.addData("Distancia", "%.1f pol", alvo.ftcPose.range);
                     telemetry.addData("Roll", "%.1f graus", alvo.ftcPose.roll);
                 }
-                telemetry.addData("Lancador", "%.2f", potenciaLancador);
+                telemetry.addData("Lancador alvo", "%d ticks/s", controleLancador.alvo());
+                telemetry.addData("Lancador atual", "%.0f ticks/s", controleLancador.velocidade());
+                telemetry.addData("Lancador estado", controleLancador.estado());
                 telemetry.addData("Coletor", "%.2f", potenciaColetor);
                 telemetry.update();
                 idle();

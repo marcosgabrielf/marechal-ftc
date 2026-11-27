@@ -8,7 +8,7 @@ final class MarechalTracao {
     private static final double PASSO_POTENCIA = 0.05;
     private static final double ZONA_MORTA = 0.05;
     private static final double ACELERACAO_POR_SEGUNDO = 4.5;
-    private static final double DESACELERACAO_POR_SEGUNDO = 6.0;
+    private static final double DESACELERACAO_POR_SEGUNDO = 3.0;
 
     private double limite = POTENCIA_INICIAL;
     private boolean frenteInvertida;
@@ -18,11 +18,6 @@ final class MarechalTracao {
 
     void atualizar(double joystickEsquerdoY, double joystickDireitoX,
                    boolean modoPreciso) {
-        long agora = System.nanoTime();
-        double intervalo = ultimoTempoNs == 0 ? 0.04 :
-            Math.min(0.10, Math.max(0.0, (agora - ultimoTempoNs) / 1.0e9));
-        ultimoTempoNs = agora;
-
         // Apenas Y do esquerdo e X do direito: diagonais leves nao alteram o comando.
         double acelerador = curva(-joystickEsquerdoY, 0.15) * limite;
         if (frenteInvertida) acelerador = -acelerador;
@@ -30,12 +25,6 @@ final class MarechalTracao {
         if (modoPreciso) {
             acelerador *= 0.55;
             giro *= 0.55;
-        }
-
-        if (acelerador == 0.0 && giro == 0.0) {
-            esquerda = 0.0;
-            direita = 0.0;
-            return;
         }
 
         double alvoEsquerda = acelerador + giro;
@@ -46,8 +35,11 @@ final class MarechalTracao {
             alvoDireita *= limite / maior;
         }
 
-        esquerda = aproximar(esquerda, alvoEsquerda, intervalo);
-        direita = aproximar(direita, alvoDireita, intervalo);
+        aplicarAlvo(alvoEsquerda, alvoDireita);
+    }
+
+    void atualizarMira(double alvoEsquerda, double alvoDireita) {
+        aplicarAlvo(alvoEsquerda, alvoDireita);
     }
 
     double esquerda() { return esquerda; }
@@ -57,7 +49,6 @@ final class MarechalTracao {
 
     void alternarFrente() {
         frenteInvertida = !frenteInvertida;
-        zerar();
     }
 
     void ajustarLimite(int direcao) {
@@ -66,10 +57,13 @@ final class MarechalTracao {
                 Math.round((limite + direcao * PASSO_POTENCIA) * 100.0) / 100.0));
     }
 
-    void zerar() {
-        esquerda = 0.0;
-        direita = 0.0;
-        ultimoTempoNs = System.nanoTime();
+    private void aplicarAlvo(double alvoEsquerda, double alvoDireita) {
+        long agora = System.nanoTime();
+        double intervalo = ultimoTempoNs == 0 ? 0.04 :
+            Math.min(0.10, Math.max(0.0, (agora - ultimoTempoNs) / 1.0e9));
+        ultimoTempoNs = agora;
+        esquerda = aproximar(esquerda, alvoEsquerda, intervalo);
+        direita = aproximar(direita, alvoDireita, intervalo);
     }
 
     private static double curva(double entrada, double pesoCubico) {
